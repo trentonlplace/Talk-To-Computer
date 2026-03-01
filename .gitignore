@@ -1,0 +1,10 @@
+venv/
+.env
+__pycache__/
+*.pyc
+screenshot.png
+screenshots/
+claude_logs/
+.ttc.pid
+startup.log
+contacts.json
