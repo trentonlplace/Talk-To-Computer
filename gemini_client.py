@@ -320,6 +320,20 @@ TOOL_DECLARATIONS = [
             properties={},
         ),
     ),
+    # System command execution
+    types.FunctionDeclaration(
+        name="run_command",
+        description="Run a shell command on the Windows computer and return its output. Use PowerShell syntax. You have full system access — use this for anything not covered by other tools: installing software, checking system info, managing services, network operations, registry edits, pip install, git commands, etc.",
+        parameters=types.Schema(
+            type="OBJECT",
+            properties={
+                "command": types.Schema(type="STRING", description="The shell command to execute (PowerShell syntax)"),
+                "working_directory": types.Schema(type="STRING", description="Optional working directory for the command. Defaults to Desktop."),
+                "timeout": types.Schema(type="INTEGER", description="Optional timeout in seconds. Defaults to 30."),
+            },
+            required=["command"],
+        ),
+    ),
 ]
 
 

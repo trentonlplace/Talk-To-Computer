@@ -1,3 +1,8 @@
+import asyncio
+import os
+import subprocess
+
+import config
 from app_controller import AppController
 from browser_controller import BrowserController
 from claude_manager import ClaudeManager
@@ -95,9 +100,46 @@ class ToolExecutor:
                     )
                 case "get_contacts":
                     result = self.twilio.get_contacts()
+                # System command execution
+                case "run_command":
+                    result = await self._run_command(
+                        args["command"],
+                        args.get("working_directory"),
+                        args.get("timeout", 30),
+                    )
                 case _:
                     result = f"Unknown function: {function_name}"
             return {"result": result}
         except Exception as e:
             print(f"[tools] Error in {function_name}: {e}")
             return {"error": str(e)}
+
+    async def _run_command(self, command: str, working_dir: str | None, timeout: int) -> str:
+        """Execute a shell command via PowerShell and return output."""
+        cwd = working_dir or config.DEFAULT_WORKING_DIR
+        print(f"[cmd] Running: {command[:120]}...")
+        loop = asyncio.get_running_loop()
+
+        def _exec():
+            try:
+                proc = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", command],
+                    cwd=cwd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+                output = ""
+                if proc.stdout:
+                    output += proc.stdout
+                if proc.stderr:
+                    output += f"\nSTDERR: {proc.stderr}"
+                if proc.returncode != 0:
+                    output += f"\n(exit code {proc.returncode})"
+                return output.strip()[:4000] or "(no output)"
+            except subprocess.TimeoutExpired:
+                return f"Command timed out after {timeout}s"
+            except Exception as e:
+                return f"Command failed: {e}"
+
+        return await loop.run_in_executor(None, _exec)

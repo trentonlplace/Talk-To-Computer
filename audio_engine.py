@@ -59,7 +59,7 @@ def _load_wav_as_float32(path: str) -> np.ndarray:
 _BEEP_UP_PATH = config.CHIME_ACTIVATE_PATH
 _BEEP_DOWN_PATH = config.CHIME_STANDBY_PATH
 
-CHIME_ACTIVATE = _load_wav_as_float32(_BEEP_UP_PATH)
+CHIME_ACTIVATE = np.clip(_load_wav_as_float32(_BEEP_UP_PATH) * 3.0, -1.0, 1.0)
 CHIME_STANDBY = _load_wav_as_float32(_BEEP_DOWN_PATH)
 print(f"[audio] Loaded chimes: beepup ({len(CHIME_ACTIVATE)} samples), beepdown ({len(CHIME_STANDBY)} samples)")
 

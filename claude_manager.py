@@ -92,6 +92,39 @@ class ClaudeManager:
     def _is_project_alive(self, project: ClaudeProject) -> bool:
         return project.process is not None and project.process.poll() is None
 
+    def _launch_claude(
+        self,
+        prompt_file: str,
+        working_dir: str,
+        project_name: str,
+        env: dict,
+        continue_session: bool = False,
+    ) -> subprocess.Popen:
+        """Launch Claude Code in a new console, reading the prompt from a file.
+
+        Uses a Python launcher script to bypass cmd.exe's ~8K command line
+        length limit. The prompt is read from disk and passed directly via
+        subprocess (CreateProcess has a 32K limit).
+        """
+        safe_title = project_name.replace('"', '\\"')
+        launcher = os.path.join(os.path.dirname(prompt_file), os.path.basename(prompt_file).replace(".prompt", "_launch.py"))
+        continue_flag = " '--continue'," if continue_session else ""
+        with open(launcher, "w", encoding="utf-8") as f:
+            f.write(f'''import subprocess, sys, os
+os.system('title Claude - {safe_title}')
+with open(r"{prompt_file}", "r", encoding="utf-8") as f:
+    prompt = f.read()
+args = ["claude", "--dangerously-skip-permissions",{continue_flag} prompt]
+subprocess.run(args)
+input("\\nClaude session ended. Press Enter to close...")
+''')
+        return subprocess.Popen(
+            [sys.executable, launcher],
+            cwd=working_dir,
+            env=env,
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        )
+
     async def spawn_task(
         self, prompt: str, project_name: str, working_dir: str | None = None
     ) -> str:
@@ -122,20 +155,18 @@ class ClaudeManager:
                 }
             )
 
-            # Write prompt to temp file to avoid shell injection via cmd.exe
+            # Write prompt to file — avoids cmd.exe 8K command line length limit
             prompt_file = os.path.join(project.task_dir, f"{task_id}.prompt")
             with open(prompt_file, "w", encoding="utf-8") as f:
                 f.write(prompt)
 
             env = os.environ.copy()
             env.pop("CLAUDECODE", None)
-            safe_title = project_name.replace('"', "'")
-            cmd_str = f'title Claude - {safe_title} && claude --dangerously-skip-permissions --continue "{self._escape_prompt(prompt)}"'
-            new_proc = subprocess.Popen(
-                ["cmd", "/k", cmd_str],
-                cwd=project.working_dir,
-                env=env,
-                creationflags=subprocess.CREATE_NEW_CONSOLE,
+
+            # Use Python launcher to bypass cmd.exe length limits
+            new_proc = self._launch_claude(
+                prompt_file, project.working_dir, project_name, env,
+                continue_session=True,
             )
             project.process = new_proc
 
@@ -168,22 +199,18 @@ class ClaudeManager:
             }
         )
 
-        # Write prompt to temp file to avoid shell injection via cmd.exe
+        # Write prompt to file — avoids cmd.exe 8K command line length limit
         prompt_file = os.path.join(project.task_dir, f"{task_id}.prompt")
         with open(prompt_file, "w", encoding="utf-8") as f:
             f.write(prompt)
 
-        # Launch Claude Code directly in a new visible console window
+        # Launch Claude Code in a new visible console window
         env = os.environ.copy()
         env.pop("CLAUDECODE", None)
 
-        safe_title = project_name.replace('"', "'")
-        cmd_str = f'title Claude - {safe_title} && claude --dangerously-skip-permissions "{self._escape_prompt(prompt)}"'
-        process = subprocess.Popen(
-            ["cmd", "/k", cmd_str],
-            cwd=working_dir,
-            env=env,
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        process = self._launch_claude(
+            prompt_file, working_dir, project_name, env,
+            continue_session=False,
         )
         project.process = process
         self.projects[project_name] = project
