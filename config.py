@@ -76,12 +76,28 @@ BLOCKED_URL_PATTERNS = [
     "about:",
 ]
 
-# Twilio SMS
+# Twilio SMS (fallback when email gateway unavailable)
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
 TWILIO_MESSAGING_SERVICE_SID = os.getenv("TWILIO_MESSAGING_SERVICE_SID", "")
 MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER", "")
+
+# Email-to-SMS gateway (primary SMS method - bypasses carrier A2P registration)
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMS_DEFAULT_GATEWAY = os.getenv("SMS_DEFAULT_GATEWAY", "vtext.com")
+
+# Carrier SMS gateways
+SMS_GATEWAYS = {
+    "verizon": "vtext.com",
+    "att": "txt.att.net",
+    "tmobile": "tmomail.net",
+    "uscellular": "email.uscc.net",
+    "sprint": "messaging.sprintpcs.com",
+}
 
 # Voice Activity Detection - only send audio when you're actually talking
 VAD_ENERGY_THRESHOLD = 500    # RMS energy threshold (int16 scale, 0-32768)

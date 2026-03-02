@@ -1,5 +1,7 @@
 import json
 import os
+import smtplib
+from email.mime.text import MIMEText
 
 from twilio.rest import Client
 
@@ -15,6 +17,7 @@ class TwilioManager:
         self.messaging_service_sid = config.TWILIO_MESSAGING_SERVICE_SID
         self.my_number = config.MY_PHONE_NUMBER
         self.contacts = self._load_contacts()
+        self._gateway_available = bool(config.SMTP_USER and config.SMTP_PASSWORD)
 
     def _load_contacts(self) -> dict[str, str]:
         try:
@@ -46,13 +49,38 @@ class TwilioManager:
             return f"+{digits}"
         return ""
 
-    def send_sms(self, body: str, to: str | None = None) -> str:
-        """Send an SMS. 'to' can be a contact name or phone number."""
-        to_number = self._resolve_number(to)
-        if not to_number:
-            return f"ERROR: Unknown contact '{to}'. Use add_contact to add them first."
+    def _number_to_digits(self, number: str) -> str:
+        """Strip a phone number to just 10 digits (no country code)."""
+        digits = "".join(c for c in number if c.isdigit())
+        if len(digits) == 11 and digits.startswith("1"):
+            digits = digits[1:]
+        return digits
+
+    def _send_via_gateway(self, body: str, to_number: str) -> bool:
+        """Send SMS via email-to-SMS gateway. Returns True on success."""
+        digits = self._number_to_digits(to_number)
+        gateway = config.SMS_DEFAULT_GATEWAY
+        recipient = f"{digits}@{gateway}"
+
+        msg = MIMEText(body)
+        msg["From"] = config.SMTP_USER
+        msg["To"] = recipient
+        msg["Subject"] = ""  # No subject for SMS
+
         try:
-            # Use messaging service (routes through A2P campaign) if configured
+            with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=10) as server:
+                server.starttls()
+                server.login(config.SMTP_USER, config.SMTP_PASSWORD)
+                server.send_message(msg)
+            print(f"[sms] Sent via gateway ({gateway}): {recipient}")
+            return True
+        except Exception as e:
+            print(f"[sms] Gateway send failed: {e}")
+            return False
+
+    def _send_via_twilio(self, body: str, to_number: str) -> str | None:
+        """Send SMS via Twilio. Returns error string on failure, None on success."""
+        try:
             if self.messaging_service_sid:
                 message = self.client.messages.create(
                     body=body,
@@ -65,12 +93,31 @@ class TwilioManager:
                     from_=self.from_number,
                     to=to_number,
                 )
-            display = to or "me"
-            print(f"[twilio] SMS to {display} ({to_number}): {body[:50]}... (SID: {message.sid})")
-            return f"SMS sent to {display} ({to_number})"
+            print(f"[sms] Sent via Twilio (SID: {message.sid})")
+            return None
         except Exception as e:
-            print(f"[twilio] SMS error: {e}")
-            return f"SMS failed: {e}"
+            print(f"[sms] Twilio send failed: {e}")
+            return str(e)
+
+    def send_sms(self, body: str, to: str | None = None) -> str:
+        """Send an SMS. Uses email gateway first, falls back to Twilio."""
+        to_number = self._resolve_number(to)
+        if not to_number:
+            return f"ERROR: Unknown contact '{to}'. Use add_contact to add them first."
+
+        display = to or "me"
+
+        # Primary: email-to-SMS gateway
+        if self._gateway_available:
+            if self._send_via_gateway(body, to_number):
+                return f"SMS sent to {display} ({to_number})"
+            print("[sms] Gateway failed, falling back to Twilio...")
+
+        # Fallback: Twilio
+        err = self._send_via_twilio(body, to_number)
+        if err is None:
+            return f"SMS sent to {display} ({to_number})"
+        return f"SMS failed: {err}"
 
     def add_contact(self, name: str, phone: str) -> str:
         """Add or update a contact."""
@@ -81,7 +128,7 @@ class TwilioManager:
             phone = f"+{digits}"
         self.contacts[name] = phone
         self._save_contacts()
-        print(f"[twilio] Contact saved: {name} -> {phone}")
+        print(f"[sms] Contact saved: {name} -> {phone}")
         return f"Contact '{name}' saved with number {phone}"
 
     def get_contacts(self) -> str:
