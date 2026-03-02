@@ -12,6 +12,7 @@ class TwilioManager:
     def __init__(self):
         self.client = Client(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN)
         self.from_number = config.TWILIO_PHONE_NUMBER
+        self.messaging_service_sid = config.TWILIO_MESSAGING_SERVICE_SID
         self.my_number = config.MY_PHONE_NUMBER
         self.contacts = self._load_contacts()
 
@@ -51,11 +52,19 @@ class TwilioManager:
         if not to_number:
             return f"ERROR: Unknown contact '{to}'. Use add_contact to add them first."
         try:
-            message = self.client.messages.create(
-                body=body,
-                from_=self.from_number,
-                to=to_number,
-            )
+            # Use messaging service (routes through A2P campaign) if configured
+            if self.messaging_service_sid:
+                message = self.client.messages.create(
+                    body=body,
+                    messaging_service_sid=self.messaging_service_sid,
+                    to=to_number,
+                )
+            else:
+                message = self.client.messages.create(
+                    body=body,
+                    from_=self.from_number,
+                    to=to_number,
+                )
             display = to or "me"
             print(f"[twilio] SMS to {display} ({to_number}): {body[:50]}... (SID: {message.sid})")
             return f"SMS sent to {display} ({to_number})"

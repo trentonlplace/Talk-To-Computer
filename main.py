@@ -1,9 +1,13 @@
 import asyncio
 import atexit
+import faulthandler
 import os
 import signal
 import subprocess
 import sys
+
+# Dump C-level stack trace on segfault so we can see what actually crashed
+faulthandler.enable()
 
 import config
 from audio_engine import AudioEngine
